@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Server, CreditCard, QrCode, ArrowLeft, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import BakongPaymentCard from "@/components/BakongPaymentCard";
 
 interface GamePlan {
   id: string;
@@ -303,27 +304,14 @@ const Checkout = () => {
                   </Button>
                 </>
               ) : (
-                <div className="text-center space-y-4">
-                  <div className="p-4 bg-white rounded-lg inline-block">
-                    <img
-                      src={`data:image/png;base64,${qrCode}`}
-                      alt="Payment QR Code"
-                      className="w-64 h-64"
-                    />
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Scan with your Bakong app to pay ${plan.price.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Order ID: {orderId}
-                  </p>
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate("/client")}
-                  >
-                    View My Orders
-                  </Button>
-                </div>
+                <BakongPaymentCard
+                  qrCode={qrCode}
+                  amount={plan.price}
+                  currency="USD"
+                  orderId={orderId || ""}
+                  description={`${game?.name || "Game"} Server - ${plan.name}`}
+                  onCancel={() => navigate("/products")}
+                />
               )}
             </CardContent>
           </Card>
