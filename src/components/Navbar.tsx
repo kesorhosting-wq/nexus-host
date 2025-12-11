@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Menu, X, Zap, User } from "lucide-react";
+import { Menu, X, Zap, User, ShoppingCart } from "lucide-react";
 import { useGameStore } from "@/store/gameStore";
 import { ThemeToggle } from "./ThemeToggle";
 import LanguageSwitcher from "./LanguageSwitcher";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useCart } from "@/contexts/CartContext";
 import { supabase } from "@/integrations/supabase/client";
 
 const Navbar = () => {
@@ -13,6 +14,7 @@ const Navbar = () => {
   const [user, setUser] = useState<any>(null);
   const { brand } = useGameStore();
   const { t } = useLanguage();
+  const { itemCount } = useCart();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -92,6 +94,16 @@ const Navbar = () => {
             <div className="hidden md:flex items-center gap-3">
               <LanguageSwitcher />
               <ThemeToggle />
+              <Link to="/cart" className="relative">
+                <Button variant="ghost" size="icon">
+                  <ShoppingCart className="w-5 h-5" />
+                  {itemCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center">
+                      {itemCount}
+                    </span>
+                  )}
+                </Button>
+              </Link>
               {user ? (
                 <Link to="/client">
                   <Button variant="outline" size="sm" className="gap-2">

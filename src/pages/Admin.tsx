@@ -3,10 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGameStore, Game, GamePlan, Hardware, HeroStat } from "@/store/gameStore";
-import { Plus, Trash2, Save, Gamepad2, HardDrive, MapPin, X, LogOut, Shield, Link, Palette, Sparkles, Home, Server, CreditCard } from "lucide-react";
+import { Plus, Trash2, Save, Gamepad2, HardDrive, MapPin, X, LogOut, Shield, Palette, Sparkles, Home, Server, CreditCard, Loader2, Image } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useBranding } from "@/hooks/useBranding";
+import { useDataSync } from "@/hooks/useDataSync";
 import { LogoUpload } from "@/components/admin/LogoUpload";
 import HeroBackgroundUpload from "@/components/admin/HeroBackgroundUpload";
 import FaviconOgUpload from "@/components/admin/FaviconOgUpload";
@@ -23,6 +24,7 @@ const Admin = () => {
   const navigate = useNavigate();
   const { user, loading, isAdmin, signOut } = useAuth();
   const { saveBranding, saving } = useBranding();
+  const { saveGame, deleteGame: deleteGameFromDb, saveLocation, saveSeasonalTheme, syncing } = useDataSync();
   const { 
     games, hardware, locations, seasonalThemes, brand,
     updateGame, addGame, deleteGame, updateHardware, addHardware, deleteHardware, 
@@ -31,8 +33,8 @@ const Admin = () => {
   
   const [activeTab, setActiveTab] = useState<"games" | "hardware" | "locations" | "themes" | "brand" | "pterodactyl" | "billing">("games");
   const [editingGame, setEditingGame] = useState<Game | null>(null);
-  const [newGame, setNewGame] = useState<Partial<Game>>({ name: "", description: "", icon: "🎮", enabled: true, plans: [] });
-  const [newPlan, setNewPlan] = useState<Partial<GamePlan>>({ name: "", ram: "", cpu: "", storage: "", slots: "", price: 0, orderLink: "" });
+  const [newGame, setNewGame] = useState<Partial<Game>>({ name: "", description: "", icon: "/games/minecraft-icon.png", enabled: true, plans: [] });
+  const [newPlan, setNewPlan] = useState<Partial<GamePlan>>({ name: "", ram: "", cpu: "", storage: "", slots: "", price: 0 });
   const [newHardware, setNewHardware] = useState<Partial<Hardware>>({ name: "", description: "", specs: "" });
   const [editBrand, setEditBrand] = useState(brand);
 
@@ -72,27 +74,25 @@ const Admin = () => {
     return null;
   }
 
-  const handleSaveGame = () => {
+  const handleSaveGame = async () => {
     if (editingGame) {
-      updateGame(editingGame.id, editingGame);
-      toast({ title: "Game updated successfully!" });
+      await saveGame(editingGame);
       setEditingGame(null);
     }
   };
 
-  const handleAddGame = () => {
+  const handleAddGame = async () => {
     if (newGame.name && newGame.description) {
       const game: Game = {
         id: newGame.name.toLowerCase().replace(/\s+/g, "-"),
         name: newGame.name,
         description: newGame.description,
-        icon: newGame.icon || "🎮",
+        icon: newGame.icon || "/games/minecraft-icon.png",
         enabled: true,
         plans: [],
       };
-      addGame(game);
-      setNewGame({ name: "", description: "", icon: "🎮", enabled: true, plans: [] });
-      toast({ title: "Game added successfully!" });
+      await saveGame(game);
+      setNewGame({ name: "", description: "", icon: "/games/minecraft-icon.png", enabled: true, plans: [] });
     }
   };
 
@@ -106,24 +106,12 @@ const Admin = () => {
         storage: newPlan.storage || "",
         slots: newPlan.slots || "",
         price: Number(newPlan.price) || 0,
-        orderLink: newPlan.orderLink || "",
       };
       setEditingGame({
         ...editingGame,
         plans: [...editingGame.plans, plan],
       });
-      setNewPlan({ name: "", ram: "", cpu: "", storage: "", slots: "", price: 0, orderLink: "" });
-    }
-  };
-
-  const handleUpdatePlanLink = (planId: string, orderLink: string) => {
-    if (editingGame) {
-      setEditingGame({
-        ...editingGame,
-        plans: editingGame.plans.map((p) =>
-          p.id === planId ? { ...p, orderLink } : p
-        ),
-      });
+      setNewPlan({ name: "", ram: "", cpu: "", storage: "", slots: "", price: 0 });
     }
   };
 
@@ -134,6 +122,10 @@ const Admin = () => {
         plans: editingGame.plans.filter((p) => p.id !== planId),
       });
     }
+  };
+
+  const handleDeleteGame = async (gameId: string) => {
+    await deleteGameFromDb(gameId);
   };
 
   const handleAddHardware = () => {
@@ -157,6 +149,24 @@ const Admin = () => {
   const handleSignOut = async () => {
     await signOut();
     navigate("/");
+  };
+
+  const handleLocationToggle = async (loc: any) => {
+    const updated = { ...loc, enabled: !loc.enabled };
+    await saveLocation(updated);
+  };
+
+  const handleThemeToggle = async (theme: any) => {
+    // Disable all other themes
+    for (const t of seasonalThemes) {
+      if (t.id !== theme.id && t.enabled) {
+        await saveSeasonalTheme({ ...t, enabled: false });
+      }
+    }
+    await saveSeasonalTheme({ ...theme, enabled: !theme.enabled });
+    toast({ 
+      title: theme.enabled ? `${theme.name} theme disabled` : `${theme.name} theme enabled!` 
+    });
   };
 
   return (
@@ -267,17 +277,23 @@ const Admin = () => {
                   onChange={(e) => setNewGame({ ...newGame, description: e.target.value })}
                   className="bg-background/50 border-border"
                 />
-                <Input
-                  placeholder="Icon (emoji)"
-                  value={newGame.icon}
-                  onChange={(e) => setNewGame({ ...newGame, icon: e.target.value })}
-                  className="bg-background/50 border-border"
-                />
-                <Button onClick={handleAddGame} className="gap-2">
-                  <Plus className="w-4 h-4" />
+                <div className="relative">
+                  <Input
+                    placeholder="Icon URL (e.g. /games/icon.png)"
+                    value={newGame.icon}
+                    onChange={(e) => setNewGame({ ...newGame, icon: e.target.value })}
+                    className="bg-background/50 border-border pl-10"
+                  />
+                  <Image className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                </div>
+                <Button onClick={handleAddGame} className="gap-2" disabled={syncing}>
+                  {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                   Add Service
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Icon should be URL path like /games/minecraft-icon.png or full URL
+              </p>
             </div>
 
             {/* Game List */}
@@ -286,7 +302,11 @@ const Admin = () => {
                 <div key={game.id} className="glass rounded-xl p-6 border border-border">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      <span className="text-4xl">{game.icon}</span>
+                      {game.icon.startsWith('/') || game.icon.startsWith('http') ? (
+                        <img src={game.icon} alt={game.name} className="w-12 h-12 object-contain rounded-lg" />
+                      ) : (
+                        <span className="text-4xl">{game.icon}</span>
+                      )}
                       <div>
                         <h3 className="font-display text-xl font-bold">{game.name}</h3>
                         <p className="text-sm text-muted-foreground">{game.plans.length} plans</p>
@@ -303,14 +323,18 @@ const Admin = () => {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => updateGame(game.id, { enabled: !game.enabled })}
+                        onClick={async () => {
+                          await saveGame({ ...game, enabled: !game.enabled });
+                        }}
+                        disabled={syncing}
                       >
                         {game.enabled ? "Disable" : "Enable"}
                       </Button>
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => deleteGame(game.id)}
+                        onClick={() => handleDeleteGame(game.id)}
+                        disabled={syncing}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -321,7 +345,6 @@ const Admin = () => {
                       <div key={plan.id} className="flex items-center justify-between text-sm p-2 bg-muted rounded border border-border">
                         <div className="flex items-center gap-2">
                           <span>{plan.name}</span>
-                          {plan.orderLink && <Link className="w-3 h-3 text-primary" />}
                         </div>
                         <span className="text-primary font-semibold">${plan.price.toFixed(2)}/mo</span>
                       </div>
@@ -355,12 +378,22 @@ const Admin = () => {
                       onChange={(e) => setEditingGame({ ...editingGame, description: e.target.value })}
                       className="bg-background/50 border-border"
                     />
-                    <Input
-                      placeholder="Icon (emoji)"
-                      value={editingGame.icon}
-                      onChange={(e) => setEditingGame({ ...editingGame, icon: e.target.value })}
-                      className="bg-background/50 border-border"
-                    />
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Icon URL</label>
+                      <div className="flex gap-3 items-center">
+                        {editingGame.icon.startsWith('/') || editingGame.icon.startsWith('http') ? (
+                          <img src={editingGame.icon} alt="Preview" className="w-12 h-12 object-contain rounded-lg bg-muted" />
+                        ) : (
+                          <span className="text-4xl">{editingGame.icon}</span>
+                        )}
+                        <Input
+                          placeholder="Icon URL (e.g. /games/icon.png)"
+                          value={editingGame.icon}
+                          onChange={(e) => setEditingGame({ ...editingGame, icon: e.target.value })}
+                          className="bg-background/50 border-border flex-1"
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <h3 className="font-display text-lg font-bold mb-4">Pricing Plans</h3>
@@ -379,15 +412,6 @@ const Admin = () => {
                           >
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Link className="w-4 h-4 text-muted-foreground" />
-                          <Input
-                            placeholder="Order URL (e.g. https://billing.example.com/order)"
-                            value={plan.orderLink || ""}
-                            onChange={(e) => handleUpdatePlanLink(plan.id, e.target.value)}
-                            className="bg-background/50 border-border text-sm h-8"
-                          />
                         </div>
                       </div>
                     ))}
@@ -432,19 +456,13 @@ const Admin = () => {
                       className="bg-background/50 border-border"
                     />
                   </div>
-                  <Input
-                    placeholder="Order URL (opens in new tab when clicked)"
-                    value={newPlan.orderLink}
-                    onChange={(e) => setNewPlan({ ...newPlan, orderLink: e.target.value })}
-                    className="bg-background/50 border-border mb-4"
-                  />
                   <Button onClick={handleAddPlan} className="w-full mb-6 gap-2" variant="outline">
                     <Plus className="w-4 h-4" />
                     Add Plan
                   </Button>
 
-                  <Button onClick={handleSaveGame} className="w-full gap-2">
-                    <Save className="w-4 h-4" />
+                  <Button onClick={handleSaveGame} className="w-full gap-2" disabled={syncing}>
+                    {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Save Changes
                   </Button>
                 </div>
@@ -525,7 +543,8 @@ const Admin = () => {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => updateLocation(loc.id, { enabled: !loc.enabled })}
+                      onClick={() => handleLocationToggle(loc)}
+                      disabled={syncing}
                     >
                       {loc.enabled ? "Disable" : "Enable"}
                     </Button>
@@ -555,18 +574,7 @@ const Admin = () => {
                         ? "bg-primary/20 border-primary glow-neon" 
                         : "glass border-border hover:border-primary/50"
                     }`}
-                    onClick={() => {
-                      // Disable all other themes and toggle this one
-                      seasonalThemes.forEach((t) => {
-                        if (t.id !== theme.id && t.enabled) {
-                          updateSeasonalTheme(t.id, { enabled: false });
-                        }
-                      });
-                      updateSeasonalTheme(theme.id, { enabled: !theme.enabled });
-                      toast({ 
-                        title: theme.enabled ? `${theme.name} theme disabled` : `${theme.name} theme enabled!` 
-                      });
-                    }}
+                    onClick={() => handleThemeToggle(theme)}
                   >
                     <div className="flex items-center gap-3 mb-3">
                       <span className="text-4xl">{theme.icon}</span>
@@ -783,29 +791,28 @@ const Admin = () => {
             <div className="glass rounded-xl p-6 border border-primary/20">
               <h2 className="font-display text-xl font-bold mb-4">Plan Pterodactyl Configuration</h2>
               <p className="text-sm text-muted-foreground mb-4">
-                Configure Pterodactyl settings for each game plan. Click the "Pterodactyl" button on each plan in the Services tab to configure egg, nest, resources, and environment variables.
+                Configure Pterodactyl settings for each game plan.
               </p>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {games.map((game) => (
                   <div key={game.id} className="p-4 bg-muted rounded-lg">
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="text-2xl">{game.icon}</span>
+                      {game.icon.startsWith('/') || game.icon.startsWith('http') ? (
+                        <img src={game.icon} alt={game.name} className="w-8 h-8 object-contain rounded" />
+                      ) : (
+                        <span className="text-2xl">{game.icon}</span>
+                      )}
                       <h3 className="font-semibold">{game.name}</h3>
                     </div>
                     <div className="space-y-2">
                       {game.plans.map((plan) => (
-                        <div key={plan.id} className="flex items-center justify-between p-2 bg-background rounded border border-border">
-                          <span className="text-sm">{plan.name}</span>
-                          <PlanPterodactylEditor
-                            planId={plan.id}
-                            planName={plan.name}
-                            onSave={() => {}}
-                          />
-                        </div>
+                        <PlanPterodactylEditor
+                          key={plan.id}
+                          planId={plan.id}
+                          planName={plan.name}
+                          onSave={() => {}}
+                        />
                       ))}
-                      {game.plans.length === 0 && (
-                        <p className="text-xs text-muted-foreground">No plans configured</p>
-                      )}
                     </div>
                   </div>
                 ))}
@@ -822,18 +829,6 @@ const Admin = () => {
           </div>
         )}
       </div>
-
-      {/* Floating Action Button for Mobile - Brand Tab */}
-      {activeTab === "brand" && (
-        <Button
-          onClick={handleSaveBrand}
-          disabled={saving}
-          className="fixed bottom-6 right-6 sm:hidden w-14 h-14 rounded-full shadow-lg z-50 p-0"
-          size="icon"
-        >
-          <Save className="w-6 h-6" />
-        </Button>
-      )}
     </div>
   );
 };
