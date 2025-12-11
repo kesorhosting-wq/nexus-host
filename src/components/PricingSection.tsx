@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Check, Zap } from "lucide-react";
+import { Check, Zap, ShoppingCart } from "lucide-react";
 import { useGameStore } from "@/store/gameStore";
 import { usePricingContext } from "@/contexts/PricingContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useCart } from "@/contexts/CartContext";
+import { useToast } from "@/hooks/use-toast";
 
 // Plan images mapping
 const planImages: Record<string, string> = {
@@ -16,9 +19,12 @@ const planImages: Record<string, string> = {
 };
 
 const PricingSection = () => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const { games } = useGameStore();
   const { selectedGameId, setSelectedGameId } = usePricingContext();
   const { t } = useLanguage();
+  const { addToCart } = useCart();
   const [localSelectedGame, setLocalSelectedGame] = useState(games[0]?.id || "minecraft");
 
   const enabledGames = games.filter((g) => g.enabled);
@@ -33,6 +39,29 @@ const PricingSection = () => {
 
   const currentGame = enabledGames.find((g) => g.id === localSelectedGame) || enabledGames[0];
   const currentPlanImage = planImages[localSelectedGame] || planImages.minecraft;
+
+  const handleAddToCart = (plan: any) => {
+    if (!currentGame) return;
+    
+    addToCart({
+      id: `${currentGame.id}-${plan.id}-${Date.now()}`,
+      planId: plan.id,
+      gameId: currentGame.id,
+      gameName: currentGame.name,
+      gameIcon: currentGame.icon,
+      planName: plan.name,
+      price: plan.price,
+      ram: plan.ram,
+      cpu: plan.cpu,
+      storage: plan.storage,
+      slots: plan.slots,
+    });
+
+    toast({
+      title: "Added to cart!",
+      description: `${currentGame.name} - ${plan.name}`,
+    });
+  };
 
   return (
     <section id="pricing" className="py-24 relative">
@@ -162,26 +191,15 @@ const PricingSection = () => {
                   </ul>
 
                   {/* CTA */}
-                  {plan.orderLink ? (
-                    <a href={plan.orderLink} target="_blank" rel="noopener noreferrer">
-                      <Button
-                        variant={isPopular ? "hero" : "outline"}
-                        className={`w-full ${isPopular ? "glow-neon" : ""}`}
-                        size="lg"
-                      >
-                        {t('pricing.orderNow')}
-                      </Button>
-                    </a>
-                  ) : (
-                    <Button
-                      variant={isPopular ? "hero" : "outline"}
-                      className="w-full"
-                      size="lg"
-                      disabled
-                    >
-                      {t('pricing.comingSoon')}
-                    </Button>
-                  )}
+                  <Button
+                    variant={isPopular ? "hero" : "outline"}
+                    className={`w-full gap-2 ${isPopular ? "glow-neon" : ""}`}
+                    size="lg"
+                    onClick={() => handleAddToCart(plan)}
+                  >
+                    <ShoppingCart className="w-4 h-4" />
+                    {t('pricing.addToCart') || 'Add to Cart'}
+                  </Button>
                 </div>
               );
             })}
