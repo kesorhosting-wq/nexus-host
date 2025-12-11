@@ -11,13 +11,16 @@ const BAKONG_API_KEY = Deno.env.get("BAKONG_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
+// Exchange rate (approximate - in production, fetch from API)
+const USD_TO_KHR_RATE = 4100;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { amount, currency, orderId, invoiceId, description } = await req.json();
+    const { amount, currency, orderId, invoiceId, description, userId } = await req.json();
 
     console.log("Generating BakongKHQR for order:", orderId);
 
@@ -25,15 +28,36 @@ serve(async (req) => {
       throw new Error("Missing required fields: amount, orderId");
     }
 
+    // Get gateway config for merchant details
+    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    const { data: gatewayConfig } = await supabase
+      .from("payment_gateways")
+      .select("config")
+      .eq("slug", "bakong")
+      .single();
+
+    const config = gatewayConfig?.config as any || {};
+    const merchantId = BAKONG_MERCHANT_ID || config.merchantId || "merchant@bakong";
+    const merchantName = config.merchantName || "GameHost";
+    const merchantCity = config.merchantCity || "Phnom Penh";
+
+    // Determine currency and amount
+    const finalCurrency = currency || config.currency || "USD";
+    let finalAmount = amount;
+    
+    // Convert to KHR if needed
+    if (finalCurrency === "KHR" && currency === "USD") {
+      finalAmount = Math.round(amount * USD_TO_KHR_RATE);
+    }
+
     // Generate KHQR payload
-    // BakongKHQR format: https://www.bakong.nbc.gov.kh/
     const khqrPayload = {
-      merchantId: BAKONG_MERCHANT_ID,
-      merchantName: "GameHost",
-      merchantCity: "Phnom Penh",
+      merchantId: merchantId,
+      merchantName: merchantName,
+      merchantCity: merchantCity,
       merchantCountry: "KH",
-      currency: currency || "USD",
-      amount: amount.toFixed(2),
+      currency: finalCurrency,
+      amount: finalAmount.toFixed(finalCurrency === "KHR" ? 0 : 2),
       transactionId: orderId,
       additionalData: description || `Order ${orderId}`,
     };
@@ -45,17 +69,17 @@ serve(async (req) => {
     const qrCodeBase64 = await generateQRCodeImage(qrString);
 
     // Store payment record
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-    
-    await supabase.from("payments").insert({
-      amount,
-      currency: currency || "USD",
-      status: "pending",
-      invoice_id: invoiceId,
-      user_id: (await supabase.auth.getUser()).data.user?.id,
-      transaction_id: orderId,
-      gateway_response: { khqr_payload: khqrPayload },
-    });
+    if (userId) {
+      await supabase.from("payments").insert({
+        amount: finalAmount,
+        currency: finalCurrency,
+        status: "pending",
+        invoice_id: invoiceId || null,
+        user_id: userId,
+        transaction_id: orderId,
+        gateway_response: { khqr_payload: khqrPayload },
+      });
+    }
 
     console.log("QR code generated successfully for order:", orderId);
 
@@ -65,6 +89,9 @@ serve(async (req) => {
         qrCode: qrCodeBase64,
         qrString: qrString,
         transactionId: orderId,
+        currency: finalCurrency,
+        amount: finalAmount,
+        exchangeRate: finalCurrency === "KHR" ? USD_TO_KHR_RATE : null,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -84,8 +111,6 @@ serve(async (req) => {
 
 function generateKHQRString(payload: any): string {
   // EMVCo QR Code format for KHQR
-  // Reference: https://www.emvco.com/emv-technologies/qrcodes/
-  
   let qrString = "";
   
   // Payload Format Indicator

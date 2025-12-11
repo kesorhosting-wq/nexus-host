@@ -14,6 +14,7 @@ interface BakongPaymentCardProps {
   onComplete?: () => void;
   onCancel?: () => void;
   expiresIn?: number;
+  exchangeRate?: number;
 }
 
 const BakongPaymentCard = ({
@@ -25,6 +26,7 @@ const BakongPaymentCard = ({
   onComplete,
   onCancel,
   expiresIn = 900,
+  exchangeRate,
 }: BakongPaymentCardProps) => {
   const { toast } = useToast();
   const [timeLeft, setTimeLeft] = useState(expiresIn);
@@ -100,8 +102,16 @@ const BakongPaymentCard = ({
             <p className="text-white/70 text-sm mb-1">Amount to Pay</p>
             <div className="flex items-baseline justify-center gap-1">
               <span className="text-4xl font-bold">{currency === "USD" ? "$" : "៛"}</span>
-              <span className="text-5xl font-bold">{amount.toFixed(2)}</span>
+              <span className="text-5xl font-bold">
+                {currency === "KHR" ? amount.toLocaleString() : amount.toFixed(2)}
+              </span>
+              <span className="text-xl font-medium ml-1">{currency}</span>
             </div>
+            {exchangeRate && currency === "KHR" && (
+              <p className="text-white/60 text-xs mt-1">
+                ≈ ${(amount / exchangeRate).toFixed(2)} USD (1 USD = {exchangeRate.toLocaleString()} KHR)
+              </p>
+            )}
             {description && (
               <p className="text-white/70 text-sm mt-2">{description}</p>
             )}

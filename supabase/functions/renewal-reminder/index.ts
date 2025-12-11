@@ -9,18 +9,6 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-interface RenewalReminder {
-  userId: string;
-  userEmail: string;
-  orderId: string;
-  invoiceId: string;
-  invoiceNumber: string;
-  amount: number;
-  dueDate: string;
-  daysUntilDue: number;
-  serverName?: string;
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -36,7 +24,6 @@ serve(async (req) => {
 
     switch (action) {
       case "check": {
-        // Check for upcoming renewals and generate reminders
         const result = await checkUpcomingRenewals(supabase);
         return new Response(JSON.stringify(result), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -44,7 +31,6 @@ serve(async (req) => {
       }
 
       case "get-pending": {
-        // Get all pending reminders for admin view
         const result = await getPendingReminders(supabase);
         return new Response(JSON.stringify(result), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -71,32 +57,21 @@ async function checkUpcomingRenewals(supabase: any) {
 
   const now = new Date();
   const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-  const oneDayFromNow = new Date(now.getTime() + 1 * 24 * 60 * 60 * 1000);
 
   // Get unpaid invoices due within 7 days
   const { data: invoices, error: invoicesError } = await supabase
     .from("invoices")
-    .select(`
-      *,
-      orders (
-        id,
-        server_details,
-        products (name)
-      ),
-      profiles:user_id (
-        email
-      )
-    `)
+    .select("*")
     .eq("status", "unpaid")
     .gte("due_date", now.toISOString())
     .lte("due_date", sevenDaysFromNow.toISOString());
 
   if (invoicesError) {
+    console.error("Error fetching invoices:", invoicesError);
     throw new Error("Failed to fetch invoices");
   }
 
-  const reminders: RenewalReminder[] = [];
+  const reminders: any[] = [];
 
   for (const invoice of invoices || []) {
     const dueDate = new Date(invoice.due_date);
@@ -106,70 +81,47 @@ async function checkUpcomingRenewals(supabase: any) {
     const shouldRemind = daysUntilDue === 7 || daysUntilDue === 3 || daysUntilDue === 1;
 
     if (shouldRemind) {
-      const reminder: RenewalReminder = {
-        userId: invoice.user_id,
-        userEmail: invoice.profiles?.email || "unknown",
-        orderId: invoice.order_id || "",
+      reminders.push({
         invoiceId: invoice.id,
         invoiceNumber: invoice.invoice_number,
+        userId: invoice.user_id,
+        orderId: invoice.order_id || "",
         amount: invoice.total,
         dueDate: invoice.due_date,
         daysUntilDue,
-        serverName: invoice.orders?.server_details?.name || invoice.orders?.products?.name,
-      };
-
-      reminders.push(reminder);
+      });
       console.log(`Reminder needed for invoice ${invoice.invoice_number}: ${daysUntilDue} days until due`);
     }
   }
 
-  // Generate summary
-  const summary = {
+  return {
     success: true,
     checkedAt: now.toISOString(),
     totalInvoicesChecked: invoices?.length || 0,
     remindersGenerated: reminders.length,
-    reminders: reminders.map(r => ({
-      invoiceNumber: r.invoiceNumber,
-      userEmail: r.userEmail,
-      amount: r.amount,
-      daysUntilDue: r.daysUntilDue,
-      serverName: r.serverName,
-    })),
+    reminders,
     reminderBreakdown: {
       sevenDays: reminders.filter(r => r.daysUntilDue === 7).length,
       threeDays: reminders.filter(r => r.daysUntilDue === 3).length,
       oneDay: reminders.filter(r => r.daysUntilDue === 1).length,
     },
   };
-
-  return summary;
 }
 
 async function getPendingReminders(supabase: any) {
   const now = new Date();
   const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  // Get all unpaid invoices due within 7 days
+  // Get all unpaid/overdue invoices
   const { data: invoices, error } = await supabase
     .from("invoices")
-    .select(`
-      *,
-      orders (
-        id,
-        server_details,
-        status,
-        products (name)
-      ),
-      profiles:user_id (
-        email
-      )
-    `)
+    .select("*")
     .in("status", ["unpaid", "overdue"])
     .lte("due_date", sevenDaysFromNow.toISOString())
     .order("due_date", { ascending: true });
 
   if (error) {
+    console.error("Error fetching pending reminders:", error);
     throw new Error("Failed to fetch pending reminders");
   }
 
@@ -181,10 +133,8 @@ async function getPendingReminders(supabase: any) {
       invoiceId: invoice.id,
       invoiceNumber: invoice.invoice_number,
       userId: invoice.user_id,
-      userEmail: invoice.profiles?.email,
       orderId: invoice.order_id,
-      orderStatus: invoice.orders?.status,
-      serverName: invoice.orders?.server_details?.name || invoice.orders?.products?.name,
+      serverName: "Server",
       amount: invoice.total,
       dueDate: invoice.due_date,
       daysUntilDue,
