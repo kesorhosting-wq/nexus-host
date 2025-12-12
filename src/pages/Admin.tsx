@@ -398,13 +398,60 @@ const Admin = () => {
 
                   <h3 className="font-display text-lg font-bold mb-4">Pricing Plans</h3>
                   <div className="space-y-3 mb-6">
-                    {editingGame.plans.map((plan) => (
+                    {editingGame.plans.map((plan, index) => (
                       <div key={plan.id} className="p-3 bg-muted rounded-lg border border-border">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="font-semibold flex-1">{plan.name}</span>
-                          <span className="text-sm text-muted-foreground">{plan.ram}</span>
-                          <span className="text-sm text-muted-foreground">{plan.cpu}</span>
-                          <span className="text-primary font-bold">${plan.price.toFixed(2)}</span>
+                        <div className="grid grid-cols-6 gap-2 items-center">
+                          <Input
+                            placeholder="Plan Name"
+                            value={plan.name}
+                            onChange={(e) => {
+                              const updatedPlans = [...editingGame.plans];
+                              updatedPlans[index] = { ...plan, name: e.target.value };
+                              setEditingGame({ ...editingGame, plans: updatedPlans });
+                            }}
+                            className="bg-background/50 border-border"
+                          />
+                          <Input
+                            placeholder="RAM"
+                            value={plan.ram}
+                            onChange={(e) => {
+                              const updatedPlans = [...editingGame.plans];
+                              updatedPlans[index] = { ...plan, ram: e.target.value };
+                              setEditingGame({ ...editingGame, plans: updatedPlans });
+                            }}
+                            className="bg-background/50 border-border"
+                          />
+                          <Input
+                            placeholder="CPU"
+                            value={plan.cpu}
+                            onChange={(e) => {
+                              const updatedPlans = [...editingGame.plans];
+                              updatedPlans[index] = { ...plan, cpu: e.target.value };
+                              setEditingGame({ ...editingGame, plans: updatedPlans });
+                            }}
+                            className="bg-background/50 border-border"
+                          />
+                          <Input
+                            placeholder="Storage"
+                            value={plan.storage}
+                            onChange={(e) => {
+                              const updatedPlans = [...editingGame.plans];
+                              updatedPlans[index] = { ...plan, storage: e.target.value };
+                              setEditingGame({ ...editingGame, plans: updatedPlans });
+                            }}
+                            className="bg-background/50 border-border"
+                          />
+                          <Input
+                            type="number"
+                            placeholder="Price"
+                            value={plan.price}
+                            onChange={(e) => {
+                              const updatedPlans = [...editingGame.plans];
+                              updatedPlans[index] = { ...plan, price: Number(e.target.value) };
+                              setEditingGame({ ...editingGame, plans: updatedPlans });
+                            }}
+                            className="bg-background/50 border-border"
+                          />
                           <Button
                             size="sm"
                             variant="ghost"
